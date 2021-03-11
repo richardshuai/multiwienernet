@@ -6,7 +6,7 @@ MultiWienerNet can be installed via pip with requirements.txt. Run the following
 
 ```
 python3 -m venv venv_multiwienernet
-source activate venv_multiwienernet
+source venv_multiwienernet/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 pip install -e .
