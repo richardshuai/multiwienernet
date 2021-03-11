@@ -1,284 +1,228 @@
-import numpy as np
 import tensorflow as tf
-import tensorflow.keras as keras
 from tensorflow.keras import layers
-
 from src.layers import *
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate, BatchNormalization, Activation, add
-from tensorflow.keras.models import Model, model_from_json
-from tensorflow.keras.optimizers import Adam
 
-class UNet_2d(keras.Model):
-    def __init__(self):
-        super(UNet_2d, self).__init__()
-        
-        self.down1 = StackEncoder(24, kernel_size=3, dilation_rate=4)
-        self.down2 = StackEncoder(64, kernel_size=3, dilation_rate=4)
-        self.down3 = StackEncoder(128, kernel_size=3, dilation_rate=4)
-        self.down4 = StackEncoder(256, kernel_size=3, dilation_rate=4)
-        self.down5 = StackEncoder(512, kernel_size=3, dilation_rate=4)
-        self.down6 = StackEncoder(1024, kernel_size=3, dilation_rate=4)
-        
-        self.center = ConvBnRelu2d(1024, kernel_size=3, padding='same')
-
-        self.up6 = StackDecoder(512, kernel_size=3, dilation_rate=4)
-        self.up5 = StackDecoder(256, kernel_size=3, dilation_rate=4)
-        self.up4 = StackDecoder(128, kernel_size=3, dilation_rate=4)
-        self.up3 = StackDecoder(64, kernel_size=3, dilation_rate=4)
-        self.up2 = StackDecoder(24, kernel_size=3, dilation_rate=4)
-        self.up1 = StackDecoder(24, kernel_size=3, dilation_rate=4)
-        
-        # Final prediction uses a single feature channel (green)
-        self.classify = layers.Conv2D(filters=1, kernel_size=1, use_bias=True)
-        
-        
-        
-    def call(self, x):
-        out = x
-        
-#         out = self.featurize(out)
-        
-        down1_tensor, out = self.down1(out)
-        down2_tensor, out = self.down2(out)
-        down3_tensor, out = self.down3(out)
-        down4_tensor, out = self.down4(out)
-        down5_tensor, out = self.down5(out)
-        down6_tensor, out = self.down6(out)
-
-        out = self.center(out)
-
-        out = self.up6(out, down6_tensor)
-        out = self.up5(out, down5_tensor)
-        out = self.up4(out, down4_tensor)
-        out = self.up3(out, down3_tensor)
-        out = self.up2(out, down2_tensor)
-        out = self.up1(out, down1_tensor)
-
-        out = self.classify(out)
-        out = tf.squeeze(out, axis=3)
-        
-        return out
+def conv2d_block(x, filters, kernel_size, padding='same', dilation_rate=1, batch_norm=True, activation='relu'):
+    """
+    Applies Conv2D - BN - ReLU block.
+    """
+    x = layers.Conv2D(filters, kernel_size, padding=padding, use_bias=False)(x)
     
+    if batch_norm:
+        x = layers.BatchNormalization()(x)
+
+    if activation is not None:
+        x = layers.Activation(activation)(x)
     
+    return x
+
+
+def encoder_block(x, filters, kernel_size, padding='same', dilation_rate=1, pooling='max'):
+    """
+    Encoder block used in contracting path of UNet.
+    """
+    x = conv2d_block(x, filters, kernel_size, padding, dilation_rate, batch_norm=True, activation='relu')
+    x = conv2d_block(x, filters, kernel_size, padding, dilation_rate, batch_norm=True, activation='relu')
+    x_skip = x
     
-class UNet_2d_wiener(keras.Model):
-    def __init__(self, initial_psf, initial_K):
-#     def __init__(self):
-
-        super(UNet_2d_wiener, self).__init__()
-        self.wiener = WienerDeconvolutionOneStep(initial_psf, initial_K)
-#         self.wiener = WienerDeconvolutionOneStep()
-
-        
-        self.down1 = StackEncoder(24, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down2 = StackEncoder(64, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down3 = StackEncoder(128, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down4 = StackEncoder(256, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down5 = StackEncoder(512, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down6 = StackEncoder(1024, kernel_size=3, dilation_rate=1, separable_conv=False)
-        
-        self.center = ConvBnRelu2d(1024, kernel_size=3, dilation_rate=1, padding='same', separable_conv=False)
-        
-#         self.center = ConvBnRelu2d(512, kernel_size=3, padding='same', separable_conv=True)
-
-
-        self.up6 = StackDecoder(512, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up5 = StackDecoder(256, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up4 = StackDecoder(128, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up3 = StackDecoder(64, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up2 = StackDecoder(24, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up1 = StackDecoder(24, kernel_size=3, dilation_rate=1, separable_conv=False)
-        
-        # Final prediction uses a single feature channel (green)
-        self.classify = layers.Conv2D(filters=1, kernel_size=1, use_bias=True)
-        
-#         cropping = ((216, 216),
-#            (162, 162))
-#         self.crop = layers.Cropping2D(cropping=cropping)
-        
-
-        
-    def call(self, x):
-        out = self.wiener(x)
-        
-        down1_tensor, out = self.down1(out)
-        down2_tensor, out = self.down2(out)
-        down3_tensor, out = self.down3(out)
-        down4_tensor, out = self.down4(out)
-        down5_tensor, out = self.down5(out)
-        down6_tensor, out = self.down6(out)
-
-        out = self.center(out)
-
-        out = self.up6(out, down6_tensor)
-        out = self.up5(out, down5_tensor)
-        out = self.up4(out, down4_tensor)
-        out = self.up3(out, down3_tensor)
-        out = self.up2(out, down2_tensor)
-        out = self.up1(out)
-
-        out = self.classify(out)
-
-#         out = self.crop(out)
-
-        out = tf.squeeze(out, axis=3)
-        
-        return out
+    if pooling == 'max':
+        x = layers.MaxPooling2D(2, 2)(x)
+    elif pooling == 'average':
+        x = layers.AveragePooling2D(2, 2)(x)
+    else:
+        assert False, 'Pooling layer {} not implemented'.format(pooling)
     
+    return x, x_skip
+
+
+def decoder_block(x, x_skip, filters, kernel_size, padding='same', dilation_rate=1):
+    """
+    Decoder block used in expansive path of UNet.
+    """
+    x = layers.UpSampling2D(size=(2, 2), interpolation='nearest')(x)
     
-class UNet_2d_wiener_components(keras.Model):
-    def __init__(self, initial_comps, initial_K):
-        super(UNet_2d_wiener_components, self).__init__()
-        self.wiener_comps = WienerDeconvolutionPerComponent(initial_comps, initial_K)
-
-        self.down1 = StackEncoder(24, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down2 = StackEncoder(64, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down3 = StackEncoder(128, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down4 = StackEncoder(256, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down5 = StackEncoder(512, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down6 = StackEncoder(1024, kernel_size=3, dilation_rate=1, separable_conv=False)
-        
-        self.center = ConvBnRelu2d(1024, kernel_size=3, padding='same', separable_conv=False)
-
-        self.up6 = StackDecoder(512, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up5 = StackDecoder(256, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up4 = StackDecoder(128, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up3 = StackDecoder(64, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up2 = StackDecoder(24, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up1 = StackDecoder(24, kernel_size=3, dilation_rate=1, separable_conv=False)
-        
-        # Final prediction uses a single feature channel (green)
-        self.classify = layers.Conv2D(filters=1, kernel_size=1, use_bias=True)
-        
-
-        
-    def call(self, x):
-        out = self.wiener_comps(x)
-        
-        down1_tensor, out = self.down1(out)
-        down2_tensor, out = self.down2(out)
-        down3_tensor, out = self.down3(out)
-        down4_tensor, out = self.down4(out)
-        down5_tensor, out = self.down5(out)
-        down6_tensor, out = self.down6(out)
-
-        out = self.center(out)
-
-        out = self.up6(out, down6_tensor)
-        out = self.up5(out, down5_tensor)
-        out = self.up4(out, down4_tensor)
-        out = self.up3(out, down3_tensor)
-        out = self.up2(out, down2_tensor)
-        out = self.up1(out)
-
-        out = self.classify(out)
-
-#         out = self.crop(out)
-
-        out = tf.squeeze(out, axis=3)
-        
-        return out
+    # Calculate cropping for down_tensor to concatenate with x
     
+    if x_skip is not None:
+        _, h2, w2, _ = x_skip.shape
+        _, h1, w1, _ = x.shape
+        h_diff, w_diff = h2 - h1, w2 - w1
+
+        cropping = ((int(tf.math.ceil(h_diff / 2)), int(tf.math.floor(h_diff / 2))),
+                    (int(tf.math.ceil(w_diff / 2)), int(tf.math.floor(w_diff / 2))))
+        x_skip = layers.Cropping2D(cropping=cropping)(x_skip)
+        x = layers.concatenate([x, x_skip], axis=3)
+
+    x = conv2d_block(x, filters, kernel_size, padding, dilation_rate, batch_norm=True, activation='relu')
+    x = conv2d_block(x, filters, kernel_size, padding, dilation_rate, batch_norm=True, activation='relu')
+    x = conv2d_block(x, filters, kernel_size, padding, dilation_rate, batch_norm=True, activation='relu')
     
+    return x
+
+
+################################################################################################################################################
+
+
+def decoder_block_resize(x, x_skip, filters, kernel_size, padding='same', dilation_rate=1):
+    """
+    Decoder block used in expansive path of UNet. Unlike before, this block resizes the skip connections rather than cropping.
+    """
+    x = tf.image.resize(x, x_skip.shape[1:3], method='nearest')
     
-class UNet_2d_multi_wiener(keras.Model):
-    def __init__(self, initial_psfs, initial_Ks):
-        super(UNet_2d_multi_wiener, self).__init__()
-        self.multi_wiener = MultiWienerDeconvolution(initial_psfs, initial_Ks)
-
-        self.down1 = StackEncoder(24, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down2 = StackEncoder(64, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down3 = StackEncoder(128, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.down4 = StackEncoder(256, kernel_size=3, dilation_rate=1, separable_conv=False)
-
-#         self.down1 = StackEncoderMultiRes(24)
-#         self.down2 = StackEncoderMultiRes(64)
-#         self.down3 = StackEncoderMultiRes(128)
-#         self.down4 = StackEncoderMultiRes(256)
-
-#         self.down5 = StackEncoder(512, kernel_size=3, dilation_rate=1, separable_conv=False)
-#         self.down6 = StackEncoder(1024, kernel_size=3, dilation_rate=1, separable_conv=False)
-        
-#         self.center = ConvBnRelu2d(1024, kernel_size=3, dilation_rate=1, padding='same', separable_conv=True) # Setting to true to align with model 15.2
-        self.center = ConvBnRelu2d(256, kernel_size=3, dilation_rate=1, padding='same', separable_conv=False) # Setting to true to align with model 15.2
-
-# #         self.up6 = StackDecoder(512, kernel_size=3, dilation_rate=1, separable_conv=False)
-#         self.up5 = StackDecoder(256, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up4 = StackDecoder(128, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up3 = StackDecoder(64, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up2 = StackDecoder(24, kernel_size=3, dilation_rate=1, separable_conv=False)
-        self.up1 = StackDecoder(24, kernel_size=3, dilation_rate=1, separable_conv=False)
-        
-#         self.respath2 = ResPath(64, 3)
-#         self.respath3 = ResPath(128, 2)
-#         self.respath4 = ResPath(256, 1)
-        
+    x = layers.concatenate([x, x_skip], axis=3)
+    x = conv2d_block(x, filters, kernel_size, padding, dilation_rate, batch_norm=True, activation='relu')
+    x = conv2d_block(x, filters, kernel_size, padding, dilation_rate, batch_norm=True, activation='relu')
+    x = conv2d_block(x, filters, kernel_size, padding, dilation_rate, batch_norm=True, activation='relu')
     
-#         self.down1 = StackEncoderMultiRes(24)
-#         self.down2 = StackEncoderMultiRes(64)
-#         self.down3 = StackEncoderMultiRes(128)
-#         self.down4 = StackEncoderMultiRes(256)
-#         self.down5 = StackEncoderMultiRes(512)
-#         self.down6 = StackEncoderMultiRes(1024)
-        
-#         self.center = ConvBnRelu2d(1024, kernel_size=3, dilation_rate=1, padding='same', separable_conv=True) # Setting to true to align with model 15.2
-#         self.center = MultiResBlock(256)
+    return x
 
-#         self.up6 = StackDecoderMultiRes(512)
-#         self.up5 = StackDecoderMultiRes(256)
-#         self.up4 = StackDecoderMultiRes(128)
-#         self.up3 = StackDecoderMultiRes(64)
-#         self.up2 = StackDecoderMultiRes(24)
-#         self.up1 = StackDecoderMultiRes(24)
-        
-        # Final prediction uses a single feature channel (green)
-        self.classify = layers.Conv2D(filters=1, kernel_size=1, use_bias=True)
-        
-#         cropping = ((216, 216),
-#            (162, 162))
-#         self.crop = layers.Cropping2D(cropping=cropping)
-        
-
-        
-    def call(self, x):
-        out = self.multi_wiener(x)
-                
-        down1_tensor, out = self.down1(out)
-        down2_tensor, out = self.down2(out)
-        down3_tensor, out = self.down3(out)
-        down4_tensor, out = self.down4(out)
-#         down5_tensor, out = self.down5(out)
-#         down6_tensor, out = self.down6(out)
-
-        out = self.center(out)
-
-#         out = self.up6(out, down6_tensor)
-#         out = self.up5(out, down5_tensor)
-#         out = self.up4(out, self.respath4(down4_tensor))
-#         out = self.up3(out, self.respath3(down3_tensor))
-#         out = self.up2(out, self.respath2(down2_tensor))
-        out = self.up4(out, down4_tensor)
-        out = self.up3(out, down3_tensor)
-        out = self.up2(out, down2_tensor)
-        out = self.up1(out)
-
-        out = self.classify(out)
-        out = tf.clip_by_value(out, 0, 1)
-        
-        out = tf.squeeze(out, axis=3)
-        
-        return out
-
-
-class MultiWienerTrainable(keras.Model):
-    def __init__(self, initial_psfs, initial_Ks):
-        super(MultiWienerTrainable, self).__init__()
-        self.multi_wiener = MultiWienerDeconvolution(initial_psfs, initial_Ks)
-        self.classify = layers.Conv2D(filters=1, kernel_size=1, use_bias=True)
-
-    def call(self, x):
-        out = self.multi_wiener(x)
-        
-        out = self.classify(out)
-        return out
+def UNet(height, width, encoding_cs=[24, 64, 128, 256, 512, 1024], 
+         center_cs=1024,
+         decoding_cs=[512, 256, 128, 64, 24, 24],
+         skip_connections=[True, True, True, True, True, False]):
     
+    """
+    Basic UNet which does not require cropping.
+    
+    Inputs:
+        - height: input height
+        - width: input width
+        - encoding_cs: list of channels along contracting path
+        - decoding_cs: list of channels along expansive path
+    """
+
+    inputs = tf.keras.Input((height, width, 1))
+    
+    x = inputs
+    
+    skips = []
+    
+    # Contracting path
+    for c in encoding_cs:
+        x, x_skip = encoder_block(x, c, kernel_size=3, padding='same', dilation_rate=1, pooling='average')
+        skips.append(x_skip)
+
+    skips = list(reversed(skips))
+    
+    # Center
+    x = conv2d_block(x, center_cs, kernel_size=3, padding='same')
+    
+    # Expansive path
+    for i, c in enumerate(decoding_cs):
+        if skip_connections[i]:
+            x = decoder_block_resize(x, skips[i], c, kernel_size=3, padding='same', dilation_rate=1)
+        else:
+            x = decoder_block(x, None, c, kernel_size=3, padding='same', dilation_rate=1)
+        
+    # Classify
+    x = layers.Conv2D(filters=1, kernel_size=1, use_bias=True)(x)
+    outputs = tf.squeeze(x, axis=3)
+    
+    model = tf.keras.Model(inputs=[inputs], outputs=[outputs])
+    
+    return model
+
+def UNet_multiwiener_resize(height, width, initial_psfs, initial_Ks, 
+                     encoding_cs=[24, 64, 128, 256, 512, 1024], 
+                     center_cs=1024,
+                     decoding_cs=[512, 256, 128, 64, 24, 24], 
+                     skip_connections=[True, True, True, True, True, True]):
+    """
+    Multiwiener UNet which doesn't require cropping.
+    
+    Inputs:
+        - height: input height
+        - width: input width
+        - initial_psfs: preinitialized psfs
+        - initial_Ks: regularization terms for Wiener deconvolutions
+        - encoding_cs: list of channels along contracting path
+        - decoding_cs: list of channels along expansive path
+        - skip_connections: list of boolean to determine whether to concatenate with decoding channel at that index
+    """
+
+    inputs = tf.keras.Input((height, width, 1))
+    
+    x = inputs
+    
+    # Multi-Wiener deconvolutions
+    x = MultiWienerDeconvolution(initial_psfs, initial_Ks)(x)
+    
+    skips = []
+    
+    # Contracting path
+    for c in encoding_cs:
+        x, x_skip = encoder_block(x, c, kernel_size=3, padding='same', dilation_rate=1, pooling='average')
+        skips.append(x_skip)
+
+    skips = list(reversed(skips))
+    
+    # Center
+    x = conv2d_block(x, center_cs, kernel_size=3, padding='same')
+    
+    # Expansive path
+    for i, c in enumerate(decoding_cs):
+        if skip_connections[i]:
+            x = decoder_block_resize(x, skips[i], c, kernel_size=3, padding='same', dilation_rate=1)
+        else:
+            x = decoder_block(x, None, c, kernel_size=3, padding='same', dilation_rate=1)
+        
+    # Classify
+    x = layers.Conv2D(filters=1, kernel_size=1, use_bias=True)(x)
+    outputs = tf.squeeze(x, axis=3)
+    
+    model = tf.keras.Model(inputs=[inputs], outputs=[outputs])
+    
+    return model
+
+
+def UNet_wiener(height, width, initial_psf, initial_K, 
+                     encoding_cs=[24, 64, 128, 256, 512, 1024], 
+                     center_cs=1024,
+                     decoding_cs=[512, 256, 128, 64, 24, 24], 
+                     skip_connections=[True, True, True, True, True, True]):
+    """
+    Single Wiener UNet which doesn't require cropping.
+    
+    Inputs:
+        - height: input height
+        - width: input width
+        - initial_psf: preinitialized psf
+        - initial_K: regularization term for Wiener deconvolution
+        - encoding_cs: list of channels along contracting path
+        - decoding_cs: list of channels along expansive path
+        - skip_connections: list of boolean to determine whether to concatenate with decoding channel at that index
+    """
+
+    inputs = tf.keras.Input((height, width, 1))
+    
+    x = inputs
+    
+    # Multi-Wiener deconvolutions
+    x = WienerDeconvolution(initial_psf, initial_K)(x)
+    
+    skips = []
+    
+    # Contracting path
+    for c in encoding_cs:
+        x, x_skip = encoder_block(x, c, kernel_size=3, padding='same', dilation_rate=1, pooling='average')
+        skips.append(x_skip)
+
+    skips = list(reversed(skips))
+    
+    # Center
+    x = conv2d_block(x, center_cs, kernel_size=3, padding='same')
+    
+    # Expansive path
+    for i, c in enumerate(decoding_cs):
+        if skip_connections[i]:
+            x = decoder_block_resize(x, skips[i], c, kernel_size=3, padding='same', dilation_rate=1)
+        else:
+            x = decoder_block(x, None, c, kernel_size=3, padding='same', dilation_rate=1)
+        
+    # Classify
+    x = layers.Conv2D(filters=1, kernel_size=1, use_bias=True)(x)
+    outputs = tf.squeeze(x, axis=3)
+    
+    model = tf.keras.Model(inputs=[inputs], outputs=[outputs])
+    
+    return model
