@@ -24,8 +24,8 @@ class MultiWienerDeconvolution(layers.Layer):
 
         # Pad Y
         padding = ((0, 0), 
-                   (int(tf.math.ceil(h / 2)), int(tf.math.floor(h / 2))),
-                   (int(tf.math.ceil(w / 2)), int(tf.math.floor(w / 2))),
+                   (tf.dtypes.cast(tf.math.ceil(h / 2), tf.int32), tf.dtypes.cast(tf.math.floor(h / 2), tf.int32)),
+                   (tf.dtypes.cast(tf.math.ceil(w / 2), tf.int32), tf.dtypes.cast(tf.math.floor(w / 2), tf.int32)),
                     (0, 0))
         y = tf.pad(y, paddings=padding)
 
@@ -39,8 +39,8 @@ class MultiWienerDeconvolution(layers.Layer):
 
         # Pad psf
         padding_psf = (
-                   (int(tf.math.ceil(h_psf / 2)), int(tf.math.floor(h_psf / 2))),
-                   (int(tf.math.ceil(w_psf / 2)), int(tf.math.floor(w_psf / 2))),
+                   (tf.dtypes.cast(tf.math.ceil(h_psf / 2), tf.int32), tf.dtypes.cast(tf.math.floor(h_psf / 2), tf.int32)),
+                   (tf.dtypes.cast(tf.math.ceil(w_psf / 2), tf.int32), tf.dtypes.cast(tf.math.floor(w_psf / 2), tf.int32)),
                     (0, 0))
 
         H_sum = tf.pad(psf, paddings=padding_psf)
@@ -93,8 +93,9 @@ class WienerDeconvolution(layers.Layer):
         
         # Pad Y
         padding = ((0, 0), 
-                   (int(tf.math.ceil(h / 2)), int(tf.math.floor(h / 2))),
-                   (int(tf.math.ceil(w / 2)), int(tf.math.floor(w / 2))))
+                   (tf.dtypes.cast(tf.math.ceil(h / 2), tf.int32), tf.dtypes.cast(tf.math.floor(h / 2), tf.int32)),
+                   (tf.dtypes.cast(tf.math.ceil(w / 2), tf.int32), tf.dtypes.cast(tf.math.floor(w / 2), tf.int32))
+                  )
         y = tf.pad(y, paddings=padding)
         Y=tf.signal.fft2d(y)
 
@@ -104,8 +105,8 @@ class WienerDeconvolution(layers.Layer):
         
         # Pad psf
         padding_psf = (
-                   (int(tf.math.ceil(h_psf / 2)), int(tf.math.floor(h_psf / 2))),
-                   (int(tf.math.ceil(w_psf / 2)), int(tf.math.floor(w_psf / 2))))
+                   (tf.dtypes.cast(tf.math.ceil(h_psf / 2), tf.int32), tf.dtypes.cast(tf.math.floor(h_psf / 2), tf.int32)),
+                   (tf.dtypes.cast(tf.math.ceil(w_psf / 2), tf.int32), tf.dtypes.cast(tf.math.floor(w_psf / 2), tf.int32)))
         H_sum = tf.pad(psf, paddings=padding_psf)
         H_sum=tf.signal.fft2d(H_sum)
         

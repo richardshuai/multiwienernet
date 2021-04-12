@@ -48,8 +48,8 @@ def decoder_block(x, x_skip, filters, kernel_size, padding='same', dilation_rate
         _, h1, w1, _ = x.shape
         h_diff, w_diff = h2 - h1, w2 - w1
 
-        cropping = ((int(tf.math.ceil(h_diff / 2)), int(tf.math.floor(h_diff / 2))),
-                    (int(tf.math.ceil(w_diff / 2)), int(tf.math.floor(w_diff / 2))))
+        cropping = ((tf.dtypes.cast(tf.math.ceil(h_diff / 2), tf.int32), tf.dtypes.cast(tf.math.floor(h_diff / 2), tf.int32)),
+                    (tf.dtypes.cast(tf.math.ceil(w_diff / 2), tf.int32), tf.dtypes.cast(tf.math.floor(w_diff / 2), tf.int32)))
         x_skip = layers.Cropping2D(cropping=cropping)(x_skip)
         x = layers.concatenate([x, x_skip], axis=3)
 
